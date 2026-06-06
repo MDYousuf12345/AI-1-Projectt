@@ -1,7 +1,8 @@
 import os
 import sys
-from services.email_sender import send_email
 from typing import Any, Dict
+
+from backend.services.email_sender import send_email
 
 from fastapi import APIRouter, HTTPException, status
 from starlette.concurrency import run_in_threadpool
@@ -23,7 +24,6 @@ from backend.schemas import (
     ProposalRequestPayload,
     ResearchRequestPayload,
 )
-
 
 router = APIRouter()
 
@@ -53,11 +53,13 @@ async def health_check() -> Dict[str, Any]:
 @router.post("/agent/research", response_model=ApiResponse[LeadResearchData])
 async def agent_research(payload: ResearchRequestPayload) -> Dict[str, Any]:
     institution_name = payload.institution_name or payload.name or ""
+
     if payload.lead_id is None and not institution_name.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="institution_name, name, or lead_id is required",
         )
+
     return await run_in_threadpool(
         run_lead_research,
         input_text=institution_name,
@@ -74,18 +76,29 @@ async def agent_leads() -> Dict[str, Any]:
 
 @router.post("/agent/proposal", response_model=ApiResponse[ProposalData])
 async def agent_proposal(payload: ProposalRequestPayload) -> Dict[str, Any]:
-    return await run_in_threadpool(run_proposal_generator, payload.to_agent_input())
+    return await run_in_threadpool(
+        run_proposal_generator,
+        payload.to_agent_input(),
+    )
 
 
 @router.post("/agent/email", response_model=ApiResponse[EmailData])
 async def agent_email(payload: EmailRequestPayload) -> Dict[str, Any]:
-    return await run_in_threadpool(run_email_personaliser, payload.model_dump())
+    return await run_in_threadpool(
+        run_email_personaliser,
+        payload.model_dump(),
+    )
 
 
 @router.post("/agent/batch-email", response_model=ApiResponse[BatchEmailData])
 async def agent_batch_email(payload: BatchEmailRequestPayload) -> Dict[str, Any]:
-    results = await run_in_threadpool(process_batch, [lead.model_dump() for lead in payload.leads])
+    results = await run_in_threadpool(
+        process_batch,
+        [lead.model_dump() for lead in payload.leads],
+    )
     return success_response({"results": results})
+
+
 @router.post("/agent/send-batch")
 async def send_batch(payload: dict):
 
@@ -94,41 +107,45 @@ async def send_batch(payload: dict):
     for email in payload.get("emails", []):
 
         try:
-
             await send_email(
                 recipient=email["recipient_email"],
                 subject=email["subject"],
-                body=email["body"]
+                body=email["body"],
             )
 
-            results.append({
-                "institution": email["institution_name"],
-                "status": "sent"
-            })
+            results.append(
+                {
+                    "institution": email["institution_name"],
+                    "status": "sent",
+                }
+            )
 
         except Exception as e:
 
-            results.append({
-                "institution": email["institution_name"],
-                "status": "failed",
-                "error": str(e)
-            })
+            results.append(
+                {
+                    "institution": email["institution_name"],
+                    "status": "failed",
+                    "error": str(e),
+                }
+            )
 
-    return success_response({
-        "results": results
-    })
+    return success_response({"results": results})
+
+
 from pydantic import BaseModel
-from services.email_sender import send_email
+
 
 class SendEmailPayload(BaseModel):
     recipient: str
     subject: str
     body: str
 
+
 @router.post("/agent/send-email")
 async def send_single_email(payload: SendEmailPayload):
     return await send_email(
         recipient=payload.recipient,
         subject=payload.subject,
-        body=payload.body
+        body=payload.body,
     )
